@@ -12,7 +12,7 @@ RUN apt-get update && \
     git
 
 # Set desired versions
-ENV KUBECTL_VERSION="1.29.8"
+ENV KUBECTL_VERSION="1.30.3"
 ENV HELM_VERSION="3.14.0"
 
 # Install kubectl
