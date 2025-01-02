@@ -13,7 +13,7 @@ RUN apt-get update && \
 
 # Set desired versions
 ENV KUBECTL_VERSION="1.30.3"
-ENV HELM_VERSION="3.14.0"
+ENV HELM_VERSION="3.16.2"
 
 # Install kubectl
 RUN curl -LO "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
