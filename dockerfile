@@ -3,7 +3,7 @@ FROM debian:bookworm-slim
 
 # Install prerequisites
 RUN apt update && \
-    apt upgrade && \
+    apt upgrade -y && \
     apt install -y \
     curl
 
