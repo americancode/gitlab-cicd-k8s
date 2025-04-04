@@ -1,19 +1,15 @@
-# Use an official Ubuntu base image
-FROM ubuntu:24.04
+# Use an debian slim image
+FROM debian:bookworm-slim
 
 # Install prerequisites
-RUN apt-get update && \
-    apt-get install -y \
-    curl \
-    apt-transport-https \
-    gnupg \
-    lsb-release \
-    unzip \
-    git
+RUN apt update && \
+    apt upgrade && \
+    apt install -y \
+    curl
 
 # Set desired versions
-ENV KUBECTL_VERSION="1.30.3"
-ENV HELM_VERSION="3.16.2"
+ENV KUBECTL_VERSION="1.31.4"
+ENV HELM_VERSION="3.17.0"
 
 # Install kubectl
 RUN curl -LO "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
