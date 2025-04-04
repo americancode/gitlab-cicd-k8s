@@ -5,7 +5,8 @@ FROM debian:bookworm-slim
 RUN apt update && \
     apt upgrade -y && \
     apt install -y \
-    curl
+    curl \
+    git
 
 # Set desired versions
 ENV KUBECTL_VERSION="1.31.4"
