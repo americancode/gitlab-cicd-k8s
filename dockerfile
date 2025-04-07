@@ -6,8 +6,6 @@ RUN apk update && \
     apk upgrade --no-cache && \
     apk add curl git ca-certificates
 
-RUN update-ca-certificates
-
 RUN curl -LO "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz" && \
     tar -zxvf helm-v${HELM_VERSION}-linux-amd64.tar.gz && \
     mv linux-amd64/helm /usr/local/bin/helm && \
