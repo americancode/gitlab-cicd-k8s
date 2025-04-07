@@ -1,4 +1,4 @@
-# Use an debian slim image
+# Use an alpine image
 FROM alpine:3.21.3
 
 # Install prerequisites
