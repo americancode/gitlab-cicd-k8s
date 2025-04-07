@@ -4,7 +4,7 @@ FROM alpine:3.21.3
 # Install prerequisites
 RUN apk update && \
     apk upgrade --no-cache && \
-    apk add curl git 
+    apk add curl git ca-certificates update-ca-certificates
 
 # Set desired versions
 ENV KUBECTL_VERSION="1.31.4"
