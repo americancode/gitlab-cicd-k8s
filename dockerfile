@@ -1,12 +1,10 @@
 # Use an debian slim image
-FROM debian:bookworm-slim
+FROM alpine:3.21.3
 
 # Install prerequisites
-RUN apt update && \
-    apt upgrade -y && \
-    apt install -y \
-    curl \
-    git
+RUN apk update && \
+    apk upgrade --no-cache && \
+    apk add curl git 
 
 # Set desired versions
 ENV KUBECTL_VERSION="1.31.4"
