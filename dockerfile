@@ -4,7 +4,7 @@ FROM alpine:3.21.3
 # Install prerequisites
 RUN apk update && \
     apk upgrade --no-cache && \
-    apk add curl git ca-certificates
+    apk add bash curl git ca-certificates 
 
 # Set desired versions
 ENV KUBECTL_VERSION="1.31.4"
@@ -22,9 +22,8 @@ RUN curl -LO "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz" && \
     rm -rf linux-amd64 helm-v${HELM_VERSION}-linux-amd64.tar.gz
 
 # Install helm-diff plugin
-RUN helm plugin install https://github.com/databus23/helm-diff
-# Install helm-list-images plugin
-RUN helm plugin install https://github.com/d2iq-labs/helm-list-images
+RUN helm plugin install https://github.com/databus23/helm-diff && \
+    helm plugin install https://github.com/d2iq-labs/helm-list-images
 
 # Verify installations
 RUN kubectl version --client && \
