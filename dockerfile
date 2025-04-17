@@ -22,11 +22,7 @@ RUN curl -LO "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz" && \
     rm -rf linux-amd64 helm-v${HELM_VERSION}-linux-amd64.tar.gz
 
 # Install helm-diff plugin
-RUN helm plugin install https://github.com/databus23/helm-diff && \
-    helm plugin install https://github.com/d2iq-labs/helm-list-images
-
-RUN apk del bash
-
+RUN helm plugin install https://github.com/databus23/helm-diff
 # Verify installations
 RUN kubectl version --client && \
     helm version --short && \
