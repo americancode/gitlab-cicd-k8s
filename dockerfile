@@ -7,8 +7,8 @@ RUN apk update && \
     apk add bash curl git ca-certificates 
 
 # Set desired versions
-ENV KUBECTL_VERSION="1.31.4"
-ENV HELM_VERSION="3.17.0"
+ENV KUBECTL_VERSION="1.32.3"
+ENV HELM_VERSION="3.18.0"
 
 # Install kubectl
 RUN curl -LO "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
