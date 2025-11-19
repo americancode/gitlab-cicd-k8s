@@ -28,4 +28,5 @@ RUN kubectl version --client && \
     helm version --short && \
     helm plugin list
 
+# Add non-root user
 RUN adduser alpine -u 101 -G users --disabled-password && su alpine
