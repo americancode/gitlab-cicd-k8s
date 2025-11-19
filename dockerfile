@@ -1,5 +1,5 @@
 # Use an alpine image
-FROM alpine:3.21.3
+FROM alpine:3.22
 
 # Install prerequisites
 RUN apk update && \
