@@ -27,3 +27,5 @@ RUN helm plugin install https://github.com/databus23/helm-diff
 RUN kubectl version --client && \
     helm version --short && \
     helm plugin list
+
+RUN adduser alpine -u 101 -G users --disabled-password && su alpine
