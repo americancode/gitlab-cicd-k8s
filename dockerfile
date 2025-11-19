@@ -6,6 +6,10 @@ RUN apk update && \
     apk upgrade --no-cache && \
     apk add bash curl git ca-certificates yq
 
+# Create a non-root user named alpine
+RUN addgroup -g 1001 alpine && \
+    adduser -u 1001 -G alpine -s /bin/bash -D alpine
+
 # Set desired versions
 ENV KUBECTL_VERSION="1.33.3"
 ENV HELM_VERSION="3.18.6"
@@ -21,6 +25,14 @@ RUN curl -LO "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz" && \
     mv linux-amd64/helm /usr/local/bin/helm && \
     rm -rf linux-amd64 helm-v${HELM_VERSION}-linux-amd64.tar.gz
 
+# Create helm cache directory with proper permissions
+RUN mkdir -p /home/alpine/.cache/helm && \
+    mkdir -p /home/alpine/.config/helm && \
+    chown -R alpine:alpine /home/alpine
+
+# Switch to non-root user
+USER alpine 
+
 # Install helm-diff plugin
 RUN helm plugin install https://github.com/databus23/helm-diff
 # Verify installations
@@ -28,5 +40,5 @@ RUN kubectl version --client && \
     helm version --short && \
     helm plugin list
 
-# Add non-root user
-RUN adduser alpine -u 101 -G users --disabled-password && su alpine
+# Set working directory
+WORKDIR /home/alpine 
