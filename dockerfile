@@ -70,23 +70,13 @@ RUN curl -LO https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz && \
 
     rm -rf linux-amd64 helm-v${HELM_VERSION}-linux-amd64.tar.gz
 
- 
-
 # Create helm cache directory with proper permissions
-
 RUN mkdir -p /home/alpine/.cache/helm && \
-
     mkdir -p /home/alpine/.config/helm && \
-
     chown -R alpine:alpine /home/alpine
 
- 
-
 # Switch to non-root user
-
-USER alpine
-
- 
+USER alpine 
 
 # Install helm-diff plugin
 
@@ -102,8 +92,5 @@ RUN kubectl version --client && \
 
     helm plugin list
 
- 
-
 # Set working directory
-
-WORKDIR /home/alpine
+WORKDIR /home/alpine 
