@@ -7,6 +7,7 @@ on:
     tags: [ 'v*.*.*' ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
   # schedule:
   #   - cron: "0 0 * * *"
 
@@ -27,10 +28,38 @@ jobs:
       # This is used to complete the identity challenge
       # with sigstore/fulcio when running outside of PRs.
       id-token: write
+      security-events: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up Trivy
+        uses: aquasecurity/setup-trivy@v0.2.6
+        with:
+          trivy-version: v0.70.0
+
+      - name: Run Trivy fs scan
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          skip-setup-trivy: true
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 0
+          skip-dirs: |
+            .git
+            .github
+
+      - name: Upload Trivy fs SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-fs.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
 
       # Install the cosign tool except on PR
       # https://github.com/sigstore/cosign-installer
@@ -71,11 +100,61 @@ jobs:
         uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
         with:
           context: .
+          file: ./dockerfile
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          load: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+            ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Run Trivy image scan
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          skip-setup-trivy: true
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+          format: sarif
+          output: trivy-image.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+          exit-code: 0
+
+      - name: Run Trivy image scan (JSON for gate)
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          skip-setup-trivy: true
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+          format: json
+          output: trivy-image.json
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+          exit-code: 0
+
+      - name: Enforce vulnerability gate (0 CRITICAL, <=20 HIGH)
+        run: |
+          set -euo pipefail
+          critical_count="$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' trivy-image.json)"
+          high_count="$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length' trivy-image.json)"
+          echo "Trivy gate counts: CRITICAL=${critical_count}, HIGH=${high_count}"
+          if [ "${critical_count}" -gt 0 ]; then
+            echo "Gate failed: CRITICAL vulnerabilities must be 0."
+            exit 1
+          fi
+          if [ "${high_count}" -gt 20 ]; then
+            echo "Gate failed: HIGH vulnerabilities must be <= 20."
+            exit 1
+          fi
+
+      - name: Upload Trivy image SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-image.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
 
       # Sign the resulting Docker image digest except on PRs.
       # This will only write to the public Rekor transparency log when the Docker

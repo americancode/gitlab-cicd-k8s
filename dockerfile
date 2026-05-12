@@ -1,63 +1,54 @@
-# Use an alpine image
 FROM alpine:3.23
 
-
 # Install prerequisites
-RUN apk update && \
-    apk upgrade --no-cache && \
-    apk add bash curl git ca-certificates yq
+RUN apk upgrade --no-cache && \
+    apk add --no-cache bash curl git ca-certificates yq
 
-
-# Create a non-root user named alpine
+# Create a non-root user
 RUN addgroup -g 1001 alpine && \
     adduser -u 1001 -G alpine -s /bin/bash -D alpine
 
- 
-# Give alpine user ownership/permissions for certificate directories
+# Allow non-root updates to CA trust store
 RUN chown -R alpine:alpine /usr/local/share/ca-certificates && \
     chown -R alpine:alpine /etc/ssl/certs && \
     chown alpine:alpine /etc/ca-certificates.conf && \
     chmod 755 /usr/local/share/ca-certificates && \
-    chmod 755 /etc/ssl/certs
+    chmod 755 /etc/ssl/certs && \
+    chmod 755 /usr/sbin/update-ca-certificates
 
-# Make update-ca-certificates accessible to alpine user
-RUN chmod 755 /usr/sbin/update-ca-certificates
+ENV KUBECTL_VERSION="1.36.0" \
+    HELM_VERSION="4.1.4"
 
-# Set desired versions
-ENV KUBECTL_VERSION="1.33.3"
-ENV HELM_VERSION="3.18.6"
-
-# Install kubectl
-RUN curl -LO https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl && \
+# Install kubectl with checksum verification
+RUN curl --fail --show-error --silent --location -o kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
+    curl --fail --show-error --silent --location -o kubectl.sha256 "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256" && \
+    echo "$(cat kubectl.sha256)  kubectl" | sha256sum -c - && \
     chmod +x kubectl && \
-    mv kubectl /usr/local/bin/
+    mv kubectl /usr/local/bin/ && \
+    rm -f kubectl.sha256
 
-# Install helm
-RUN curl -LO https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz && \
-    tar -zxvf helm-v${HELM_VERSION}-linux-amd64.tar.gz && \
+# Install helm with checksum verification
+RUN curl --fail --show-error --silent --location -o helm-v${HELM_VERSION}-linux-amd64.tar.gz "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz" && \
+    curl --fail --show-error --silent --location -o helm-v${HELM_VERSION}-linux-amd64.tar.gz.sha256sum "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz.sha256sum" && \
+    sha256sum -c helm-v${HELM_VERSION}-linux-amd64.tar.gz.sha256sum && \
+    tar -zxf helm-v${HELM_VERSION}-linux-amd64.tar.gz && \
     mv linux-amd64/helm /usr/local/bin/helm && \
-    rm -rf linux-amd64 helm-v${HELM_VERSION}-linux-amd64.tar.gz
+    rm -rf linux-amd64 helm-v${HELM_VERSION}-linux-amd64.tar.gz helm-v${HELM_VERSION}-linux-amd64.tar.gz.sha256sum
 
-# Create helm cache directory with proper permissions
-RUN mkdir -p /home/alpine/.cache/helm && \
-    mkdir -p /home/alpine/.config/helm && \
+RUN mkdir -p /home/alpine/.cache/helm /home/alpine/.config/helm && \
     chown -R alpine:alpine /home/alpine
 
-# Switch to non-root user
-USER alpine 
+USER alpine
 
 ENV HELM_CONFIG_HOME=/home/alpine/.config/helm \
     HELM_DATA_HOME=/home/alpine/.local/share/helm \
     HELM_CACHE_HOME=/home/alpine/.cache/helm
-# Install helm-diff plugin
 
-RUN helm plugin install https://github.com/databus23/helm-diff
+# Helm 4 requires plugin verification by default; helm-diff does not publish provenance metadata.
+RUN helm plugin install https://github.com/databus23/helm-diff --verify=false
 
-
-# Verify installations
 RUN kubectl version --client && \
     helm version --short && \
     helm plugin list
 
-# Set working directory
-WORKDIR /home/alpine 
+WORKDIR /home/alpine
