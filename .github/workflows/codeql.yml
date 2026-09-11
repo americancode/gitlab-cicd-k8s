@@ -3,7 +3,11 @@ name: CodeQL
 on:
   push:
     branches: ["main"]
-    tags: ["*.*.*"]
+    tags:
+      - "v*.*.*"
+      - "v*.*.*-*"
+      - "*.*.*"
+      - "*.*.*-*"
   pull_request:
     branches: ["main"]
   schedule:

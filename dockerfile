@@ -32,6 +32,8 @@ RUN CGO_ENABLED=0 go build -mod=mod -trimpath -o /out/helm ./cmd/helm
 
 FROM alpine:3.24.1
 
+ARG TARGETARCH
+
 # Install prerequisites
 RUN apk upgrade --no-cache && \
     apk add --no-cache bash curl git ca-certificates yq
@@ -53,8 +55,12 @@ ENV KUBECTL_VERSION="1.37.0" \
     HELM_DIFF_VERSION="3.15.13"
 
 # Install kubectl with checksum verification
-RUN curl --fail --show-error --silent --location -o kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
-    curl --fail --show-error --silent --location -o kubectl.sha256 "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256" && \
+RUN case "${TARGETARCH}" in \
+      amd64|arm64) KUBECTL_ARCH="${TARGETARCH}" ;; \
+      *) echo "Unsupported target architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac && \
+    curl --fail --show-error --silent --location -o kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/${KUBECTL_ARCH}/kubectl" && \
+    curl --fail --show-error --silent --location -o kubectl.sha256 "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/${KUBECTL_ARCH}/kubectl.sha256" && \
     echo "$(cat kubectl.sha256)  kubectl" | sha256sum -c - && \
     chmod +x kubectl && \
     mv kubectl /usr/local/bin/ && \
