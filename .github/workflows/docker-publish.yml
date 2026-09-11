@@ -1,93 +1,199 @@
-name: Docker
+name: Build, Scan, and Publish Image
 
 on:
   push:
-    branches: [ "main" ]
-    # Publish semver tags as releases.
-    tags: [ 'v*.*.*' ]
+    branches: ["main"]
+    tags: ["*.*.*"]
   pull_request:
-    branches: [ "main" ]
-  # schedule:
-  #   - cron: "0 0 * * *"
+    branches: ["main"]
+  workflow_dispatch:
+
+# Serialize publishing across refs because release runs can share tags.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 env:
-  # Use docker.io for Docker Hub if empty
   REGISTRY: ghcr.io
-  # github.repository as <account>/<repo>
-  IMAGE_NAME: ${{ github.repository }}
 
+defaults:
+  run:
+    shell: bash
 
 jobs:
-  build:
-
+  build-scan-publish:
+    name: Build, Scan, Publish
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
-      # This is used to complete the identity challenge
-      # with sigstore/fulcio when running outside of PRs.
       id-token: write
+      security-events: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # Install the cosign tool except on PR
-      # https://github.com/sigstore/cosign-installer
-      - name: Install cosign
-        if: github.event_name != 'pull_request'
-        uses: sigstore/cosign-installer@59acb6260d9c0ba8f4a2f9d9b48431a222b68e20 #v3.5.0
+      - name: Checkout Source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          cosign-release: 'v2.2.4'
+          persist-credentials: false
 
-      # Set up BuildKit Docker container builder to be able to build
-      # multi-platform images and export cache
-      # https://github.com/docker/setup-buildx-action
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
+      - name: Prepare Image Names
+        id: names
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          image="${REGISTRY}/${REPOSITORY,,}"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+          echo "quarantine=${image}:quarantine-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
-      # Login against a Docker registry except on PR
-      # https://github.com/docker/login-action
-      - name: Log into registry ${{ env.REGISTRY }}
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+        with:
+          trivy-version: v0.70.0
+
+      - name: Scan Source Files
+        id: source-scan
+        run: |
+          trivy fs \
+            --scanners vuln \
+            --skip-dirs .git \
+            --skip-dirs .github \
+            --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+            --format json \
+            --output "${RUNNER_TEMP}/trivy-fs.json" \
+            --exit-code 0 \
+            .
+          trivy convert --format sarif \
+            --output "${RUNNER_TEMP}/trivy-fs.sarif" "${RUNNER_TEMP}/trivy-fs.json"
+          echo "sarif=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Source Scan SARIF
+        if: always() && steps.source-scan.outputs.sarif == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
+        with:
+          sarif_file: ${{ runner.temp }}/trivy-fs.sarif
+          category: trivy-fs
+
+      - name: Enforce Source Vulnerability Gate
+        run: |
+          count="$(jq '[.Results[]?.Vulnerabilities[]? |
+            select(.Severity == "HIGH" or .Severity == "CRITICAL")] | length' "${RUNNER_TEMP}/trivy-fs.json")"
+          echo "HIGH/CRITICAL source vulnerabilities: ${count}"
+          [[ "$count" -eq 0 ]]
+
+      - name: Set Up Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+
+      - name: Generate Image Metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: ${{ steps.names.outputs.image }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=sha
+
+      - name: Build Local Scan Image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ./dockerfile
+          # The Dockerfile downloads amd64 binaries explicitly.
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: ${{ steps.names.outputs.quarantine }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=gitlab-cicd-k8s
+          cache-to: type=gha,mode=max,scope=gitlab-cicd-k8s
+
+      - name: Scan Quarantine Image
+        id: image-scan
+        env:
+          QUARANTINE_IMAGE: ${{ steps.names.outputs.quarantine }}
+        run: |
+          trivy image \
+            --image-src docker \
+            --scanners vuln \
+            --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+            --pkg-types os,library \
+            --format json \
+            --output "${RUNNER_TEMP}/trivy-image.json" \
+            --exit-code 0 \
+            "$QUARANTINE_IMAGE"
+          trivy convert --format sarif \
+            --output "${RUNNER_TEMP}/trivy-image.sarif" "${RUNNER_TEMP}/trivy-image.json"
+          echo "sarif=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Image Scan SARIF
+        if: always() && steps.image-scan.outputs.sarif == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
+        with:
+          sarif_file: ${{ runner.temp }}/trivy-image.sarif
+          category: trivy-image
+
+      - name: Enforce Image Vulnerability Gate
+        run: |
+          count="$(jq '[.Results[]?.Vulnerabilities[]? |
+            select(.Severity == "HIGH" or .Severity == "CRITICAL")] | length' "${RUNNER_TEMP}/trivy-image.json")"
+          echo "HIGH/CRITICAL image vulnerabilities: ${count}"
+          [[ "$count" -eq 0 ]]
+
+      - name: Install Cosign
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Log In to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Extract metadata (tags, labels) for Docker
-      # https://github.com/docker/metadata-action
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-
-      # Build and push Docker image with Buildx (don't push on PR)
-      # https://github.com/docker/build-push-action
-      - name: Build and push Docker image
-        id: build-and-push
-        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
-        with:
-          context: .
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # Sign the resulting Docker image digest except on PRs.
-      # This will only write to the public Rekor transparency log when the Docker
-      # repository is public to avoid leaking data.  If you would like to publish
-      # transparency data even for private images, pass --force to cosign below.
-      # https://github.com/sigstore/cosign
-      - name: Sign the published Docker image
-        if: ${{ github.event_name != 'pull_request' }}
+      - name: Publish Scanned Image
+        id: publish
+        if: github.event_name != 'pull_request'
         env:
-          # https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-an-intermediate-environment-variable
+          SOURCE_IMAGE: ${{ steps.names.outputs.quarantine }}
+          IMAGE: ${{ steps.names.outputs.image }}
           TAGS: ${{ steps.meta.outputs.tags }}
-          DIGEST: ${{ steps.build-and-push.outputs.digest }}
-        # This step uses the identity token to provision an ephemeral certificate
-        # against the sigstore community Fulcio instance.
-        run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
+        run: |
+          set -euo pipefail
+          published_digest=""
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] || continue
+            docker tag "$SOURCE_IMAGE" "$tag"
+            docker push "$tag"
+            repo_digest="$(docker image inspect "$tag" --format '{{json .RepoDigests}}' |
+              jq -er --arg prefix "${IMAGE}@" '.[] | select(startswith($prefix))')"
+            digest="${repo_digest##*@}"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "Invalid digest: $digest" >&2; exit 1; }
+            if [[ -n "$published_digest" && "$published_digest" != "$digest" ]]; then
+              echo "Digest mismatch for $tag: $digest != $published_digest" >&2
+              exit 1
+            fi
+            published_digest="$digest"
+          done <<< "$TAGS"
+          [[ -n "$published_digest" ]] || { echo "No image tags were published" >&2; exit 1; }
+          echo "digest=${published_digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Sign and Verify Published Image
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE: ${{ steps.names.outputs.image }}
+          DIGEST: ${{ steps.publish.outputs.digest }}
+          WORKFLOW_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+          cosign sign --yes "${IMAGE}@${DIGEST}"
+          cosign verify "${IMAGE}@${DIGEST}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity "$WORKFLOW_IDENTITY"
