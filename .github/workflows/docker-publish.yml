@@ -182,11 +182,9 @@ jobs:
       - name: Sign promoted image
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          VERSION: ${{ steps.promote.outputs.version }}
           DIGEST: ${{ steps.promote.outputs.digest }}
         run: |
-          cosign sign --yes "${IMAGE}:${VERSION}@${DIGEST}"
-          if [[ "${{ steps.promote.outputs.latest }}" == "true" ]]; then cosign sign --yes "${IMAGE}:latest@${DIGEST}"; fi
+          cosign sign --yes --recursive "${IMAGE}@${DIGEST}"
       - name: Verify promoted image signature
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
