@@ -60,7 +60,14 @@ RUN curl --fail --show-error --silent --location -o kubectl "https://dl.k8s.io/r
     mv kubectl /usr/local/bin/ && \
     rm -f kubectl.sha256
 
-# Install helm with checksum verification
+# The old direct Helm download is intentionally retained here as comments for
+# reference. The source-built binary above is used instead.
+# RUN curl --fail --show-error --silent --location -o helm-v${HELM_VERSION}-linux-amd64.tar.gz "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz" && \
+#     curl --fail --show-error --silent --location -o helm-v${HELM_VERSION}-linux-amd64.tar.gz.sha256sum "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz.sha256sum" && \
+#     sha256sum -c helm-v${HELM_VERSION}-linux-amd64.tar.gz.sha256sum && \
+#     tar -zxf helm-v${HELM_VERSION}-linux-amd64.tar.gz && \
+#     mv linux-amd64/helm /usr/local/bin/helm && \
+#     rm -rf linux-amd64 helm-v${HELM_VERSION}-linux-amd64.tar.gz helm-v${HELM_VERSION}-linux-amd64.tar.gz.sha256sum
 COPY --from=tools-builder /out/helm /usr/local/bin/helm
 
 RUN mkdir -p /home/alpine/.cache/helm /home/alpine/.config/helm && \
