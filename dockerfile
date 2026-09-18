@@ -30,7 +30,7 @@ RUN git clone --depth 1 --branch "v${HELM_VERSION}" https://github.com/helm/helm
     go mod tidy
 RUN CGO_ENABLED=0 go build -mod=mod -trimpath -o /out/helm ./cmd/helm
 
-FROM alpine:3.24.1
+FROM alpine:3.24.2
 
 ARG TARGETARCH
 
