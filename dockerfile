@@ -7,7 +7,7 @@
 # The MEDIUM SSH findings are from golang.org/x/crypto v0.55.0:
 # CVE-2026-56855 and CVE-2026-78662. Remove this stage when upstream ships
 # a helm-diff release containing the patched dependencies.
-FROM golang:1.27.1-alpine AS tools-builder
+FROM golang:1.27.2-alpine AS tools-builder
 
 ARG HELM_DIFF_VERSION=3.15.13
 ARG HELM_VERSION=4.3.0
